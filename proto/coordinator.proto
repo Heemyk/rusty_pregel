@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package pregel.coordinator;
+
+service Coordinator {
+  rpc RegisterWorker(RegisterWorkerRequest) returns (RegisterWorkerResponse);
+  rpc WaitForAllReady(WaitForAllReadyRequest) returns (WaitForAllReadyResponse);
+  rpc ReportSuperstepDone(ReportSuperstepDoneRequest) returns (ReportSuperstepDoneResponse);
+  rpc GetCurrentSuperstep(GetCurrentSuperstepRequest) returns (GetCurrentSuperstepResponse);
+  rpc WaitForAdvance(WaitForAdvanceRequest) returns (stream AdvanceNotification);
+}
+
+message RegisterWorkerRequest {
+  uint32 worker_id = 1;
+  string address = 2;
+  uint64 vertex_count = 3;
+}
+
+message RegisterWorkerResponse {}
+
+message WaitForAllReadyRequest {}
+
+message WaitForAllReadyResponse {}
+
+message ReportSuperstepDoneRequest {
+  uint32 worker_id = 1;
+  uint64 superstep = 2;
+  uint64 messages_sent = 3;
+}
+
+message ReportSuperstepDoneResponse {}
+
+message GetCurrentSuperstepRequest {}
+
+message GetCurrentSuperstepResponse {
+  uint64 superstep = 1;
+}
+
+message WaitForAdvanceRequest {
+  uint64 from_superstep = 1;
+}
+
+message AdvanceNotification {
+  uint64 superstep = 1;
+}

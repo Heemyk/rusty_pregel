@@ -5,13 +5,14 @@
 //! per target worker. This reduces network round-trips.
 
 use pregel_common::{Message, WorkerId};
+use serde::{Deserialize, Serialize};
 
 /// A batch of messages all destined for the same worker.
 ///
 /// After executing vertices, the worker has many outgoing messages. Rather than
 /// sending each one individually, we group by target worker. Worker 2 gets one
 /// `MessageBatch` containing all messages for vertices it owns.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageBatch {
     pub target_worker: WorkerId,
     pub messages: Vec<Message>,

@@ -4,6 +4,7 @@
 
 pub mod barrier;
 pub mod coordinator;
+pub mod grpc;
 pub mod job_manager;
 pub mod worker_registry;
 

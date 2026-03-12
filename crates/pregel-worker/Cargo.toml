@@ -3,11 +3,37 @@ name = "pregel-worker"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "pregel-worker"
+path = "src/bin/main.rs"
+
+[build-dependencies]
+protoc-bin-vendored = "3"
+tonic-build = "0.11"
+
+[dev-dependencies]
+criterion = "0.5"
+tempfile = "3"
+
+[[bench]]
+name = "superstep"
+harness = false
+
 [dependencies]
+pregel-checkpoint = { path = "../pregel-checkpoint" }
 pregel-common = { path = "../pregel-common" }
 pregel-core = { path = "../pregel-core" }
 pregel-messaging = { path = "../pregel-messaging" }
+pregel-observability = { path = "../pregel-observability" }
 pregel-storage = { path = "../pregel-storage" }
 pregel-wasm = { path = "../pregel-wasm" }
-pregel-checkpoint = { path = "../pregel-checkpoint" }
+bincode = "1"
+quinn = "0.11"
+rcgen = "0.13"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "2"
+prost = "0.12"
+rayon = "1"
+serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+tonic = "0.11"

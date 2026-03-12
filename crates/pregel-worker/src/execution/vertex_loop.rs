@@ -1,30 +1,102 @@
-//! The inner loop: for each vertex, get messages, run compute, collect outgoing.
+//! Parallel vertex execution within a superstep.
 
-use pregel_common::{Message, VertexId};
+use pregel_common::{ComputeResultWire, Message, VertexId};
+
+pub use pregel_common::ComputeInput;
+use pregel_core::{Algorithm, PartitionStrategyImpl};
 use pregel_storage::GraphPartition;
+use pregel_wasm::{WasmExecutor, WasmModule};
+use rayon::prelude::*;
 use std::collections::HashMap;
+use std::sync::Arc;
 
-/// Execute one superstep for this partition.
-///
-/// For each vertex, fetches messages from the inbox, runs compute (placeholder:
-/// currently just passes through), and collects (target, payload) pairs.
-///
-/// **Full implementation** would: deserialize vertex + messages, call
-/// `VertexExecutor::execute()` (WASM or native), serialize results.
-pub fn execute_superstep(
-    partition: &GraphPartition,
+/// Output from WASM compute: (target, payload) pairs.
+pub type ComputeOutput = Vec<(VertexId, Vec<u8>)>;
+
+/// Result of compute: optional value update + outgoing messages.
+#[derive(Debug, Clone)]
+pub struct ComputeResult {
+    pub new_value: Option<Vec<u8>>,
+    pub outgoing: ComputeOutput,
+}
+
+impl ComputeResult {
+    pub fn halt(outgoing: ComputeOutput) -> Self {
+        Self { new_value: None, outgoing }
+    }
+    pub fn update(new_value: Vec<u8>, outgoing: ComputeOutput) -> Self {
+        Self { new_value: Some(new_value), outgoing }
+    }
+}
+
+/// Execute one superstep in parallel using rayon (CPU-bound work).
+/// Runs inside tokio::spawn_blocking so we don't block the async runtime.
+/// In superstep 0, all vertices run (no messages yet). In superstep > 0, only vertices with messages run.
+pub fn execute_superstep_parallel(
+    partition: &Arc<GraphPartition>,
     inbox: &HashMap<VertexId, Vec<Message>>,
-) -> Vec<(VertexId, Vec<u8>)> {
+    superstep: u64,
+    algo: Algorithm,
+    wasm_executor: Option<&WasmExecutor>,
+    wasm_module: Option<&WasmModule>,
+    _partition_impl: &dyn PartitionStrategyImpl,
+    _worker_count: usize,
+) -> (Vec<(VertexId, Vec<u8>)>, Vec<(VertexId, VertexId, Vec<u8>)>) {
+    let vertices_to_run: Vec<_> = if superstep == 0 {
+        partition.vertices.iter().map(|(vid, v)| (*vid, v.clone())).collect()
+    } else {
+        partition
+            .vertices
+            .iter()
+            .filter(|(vid, _)| inbox.get(vid).map_or(false, |msgs| !msgs.is_empty()))
+            .map(|(vid, v)| (*vid, v.clone()))
+            .collect()
+    };
+
+    let results: Vec<(Option<Vec<u8>>, Vec<(VertexId, Vec<u8>)>)> = vertices_to_run
+        .par_iter()
+        .map(|(vertex_id, vertex_data)| {
+            let messages: Vec<(VertexId, Vec<u8>)> = inbox
+                .get(vertex_id)
+                .map(|m| m.iter().map(|msg| (msg.source, msg.payload.clone())).collect())
+                .unwrap_or_default();
+
+            let input = ComputeInput {
+                vertex_id: vertex_data.id,
+                value: vertex_data.value.clone(),
+                edges: vertex_data.edges.clone(),
+                messages,
+            };
+
+            let result = if let (Some(exec), Some(modu)) = (wasm_executor, wasm_module) {
+                let bytes = bincode::serialize(&input).unwrap();
+                let output = exec.compute(modu, &bytes).unwrap_or_default();
+                let wire: ComputeResultWire = bincode::deserialize(&output).unwrap_or(ComputeResultWire {
+                    new_value: None,
+                    outgoing: vec![],
+                });
+                (wire.new_value, wire.outgoing)
+            } else {
+                let res = match algo {
+                    Algorithm::Pagerank => crate::native_algo::pagerank_compute(&input),
+                    Algorithm::ConnectedComponents => crate::native_algo::connected_components_compute(&input),
+                    Algorithm::ShortestPath => crate::native_algo::shortest_path_compute(&input),
+                };
+                (res.new_value, res.outgoing)
+            };
+            result
+        })
+        .collect();
+
+    let mut value_updates = Vec::new();
     let mut outgoing = Vec::new();
-
-    for (vertex_id, _vertex_data) in &partition.vertices {
-        let messages = inbox.get(vertex_id).map(|m| m.as_slice()).unwrap_or(&[]);
-
-        // Placeholder: actual execution would invoke WASM or native vertex program
-        for msg in messages {
-            outgoing.push((msg.target, msg.payload.clone()));
+    for ((vertex_id, _), (new_val, msgs)) in vertices_to_run.iter().zip(results.iter()) {
+        if let Some(v) = new_val {
+            value_updates.push((*vertex_id, v.clone()));
+        }
+        for (target, payload) in msgs {
+            outgoing.push((*vertex_id, *target, payload.clone()));
         }
     }
-
-    outgoing
+    (value_updates, outgoing)
 }

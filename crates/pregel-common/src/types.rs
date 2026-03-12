@@ -31,10 +31,28 @@ pub type WorkerId = u32;
 ///
 /// # Fields
 ///
+/// * `source` - The vertex that sent this message. Used by CC for reverse edges.
 /// * `target` - The vertex this message is addressed to (can be on any worker)
 /// * `payload` - The serialized message content. Interpretation depends on the algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
+    pub source: VertexId,
     pub target: VertexId,
     pub payload: Vec<u8>,
+}
+
+/// Input for vertex compute (WASM or native). Shared ABI with WASM modules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComputeInput {
+    pub vertex_id: VertexId,
+    pub value: Vec<u8>,
+    pub edges: Vec<VertexId>,
+    pub messages: Vec<(VertexId, Vec<u8>)>,
+}
+
+/// Output from WASM compute: value update + outgoing messages. Bincode-serialized.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComputeResultWire {
+    pub new_value: Option<Vec<u8>>,
+    pub outgoing: Vec<(VertexId, Vec<u8>)>,
 }

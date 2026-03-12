@@ -1,0 +1,14 @@
+# Multi-component graph for CC testing.
+# Component A: 0-1-2-3 (cycle + chord)
+# Component B: 4-5-6 (triangle)
+# Component C: 7 (isolated, self-loop to include in graph)
+0 1
+0 2
+1 2
+1 3
+2 3
+3 0
+4 5
+5 6
+6 4
+7 7

@@ -26,23 +26,23 @@ impl Worker {
         }
     }
 
-    /// Group outgoing (vertex, payload) pairs into MessageBatches by target worker.
+    /// Group outgoing (source, target, payload) triples into MessageBatches by target worker.
     ///
-    /// After compute runs, we have many (target_vertex, payload) pairs. This
-    /// groups them: all messages for Worker 0 in one batch, Worker 1 in another, etc.
-    /// The worker then sends each batch to the appropriate peer.
+    /// After compute runs, we have many (source_vertex, target_vertex, payload) triples.
+    /// This groups them by target worker. The worker then sends each batch to the appropriate peer.
     pub fn route_messages(
         &self,
-        outgoing: Vec<(VertexId, Vec<u8>)>,
+        outgoing: Vec<(VertexId, VertexId, Vec<u8>)>,
     ) -> HashMap<WorkerId, MessageBatch> {
         let mut batches: HashMap<WorkerId, MessageBatch> = HashMap::new();
 
-        for (target_vertex, payload) in outgoing {
+        for (source_vertex, target_vertex, payload) in outgoing {
             let target_worker = partition(target_vertex, self.worker_count);
             let batch = batches
                 .entry(target_worker)
                 .or_insert_with(|| MessageBatch::new(target_worker));
             batch.push(pregel_common::Message {
+                source: source_vertex,
                 target: target_vertex,
                 payload,
             });

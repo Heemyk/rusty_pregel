@@ -35,10 +35,11 @@ pregel/
 # Build everything
 cargo build --workspace
 
-# Run the CLI
-cargo run -p pregel-cli -- --help
-cargo run -p pregel-cli -- submit --program pagerank.wasm --graph /path/to/graph --workers 4
+# Submit a job (native PageRank, 2 workers)
+cargo run -p pregel-cli -- submit --graph examples/data/sample.graph --workers 2
 ```
+
+The coordinator runs on port 5000; workers on 5001, 5002, etc. Press Ctrl+C to stop.
 
 ## Documentation Guide (for Rust Beginners)
 

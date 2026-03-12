@@ -3,7 +3,19 @@ name = "pregel-coordinator"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "pregel-coordinator"
+path = "src/bin/main.rs"
+
+[build-dependencies]
+protoc-bin-vendored = "3"
+tonic-build = "0.11"
+
 [dependencies]
+prost = "0.12"
+tokio-stream = "0.1"
 pregel-common = { path = "../pregel-common" }
 pregel-core = { path = "../pregel-core" }
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["full"] }
+tonic = "0.11"
+tower = "0.4"

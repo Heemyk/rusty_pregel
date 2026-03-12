@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/pregel-observability",
     "crates/pregel-common",
     "crates/pregel-sdk",
     "crates/pregel-core",
@@ -14,4 +15,5 @@ members = [
     "examples/pagerank",
     "examples/connected_components",
     "examples/shortest_path",
+    "crates/pregel-wasm-algos",
 ]

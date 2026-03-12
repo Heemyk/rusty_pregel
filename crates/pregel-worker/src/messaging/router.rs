@@ -19,16 +19,17 @@ impl MessageRouter {
         Self { worker_count }
     }
 
-    /// Route outgoing pairs into MessageBatches. Skips empty batches.
-    pub fn route(&self, outgoing: Vec<(VertexId, Vec<u8>)>) -> Vec<MessageBatch> {
+    /// Route outgoing (source, target, payload) triples into MessageBatches. Skips empty batches.
+    pub fn route(&self, outgoing: Vec<(VertexId, VertexId, Vec<u8>)>) -> Vec<MessageBatch> {
         let mut batches: HashMap<WorkerId, MessageBatch> = HashMap::new();
 
-        for (target_vertex, payload) in outgoing {
+        for (source_vertex, target_vertex, payload) in outgoing {
             let target_worker = partition(target_vertex, self.worker_count);
             batches
                 .entry(target_worker)
                 .or_insert_with(|| MessageBatch::new(target_worker))
                 .push(Message {
+                    source: source_vertex,
                     target: target_vertex,
                     payload,
                 });

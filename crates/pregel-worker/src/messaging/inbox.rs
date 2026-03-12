@@ -38,4 +38,9 @@ impl MessageInbox {
     pub fn is_empty(&self) -> bool {
         self.messages.is_empty()
     }
+
+    /// Get reference to the inner map for parallel execution.
+    pub fn as_map(&self) -> &HashMap<VertexId, Vec<Message>> {
+        &self.messages
+    }
 }

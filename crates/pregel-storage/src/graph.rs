@@ -19,7 +19,7 @@ use crate::VertexData;
 /// Typically at job start: the coordinator (or a loader) reads the graph,
 /// partitions it, and sends each worker its partition. Or workers load from
 /// a distributed store (e.g., S3) with a filter for their partition.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct GraphPartition {
     pub vertices: HashMap<VertexId, VertexData>,
 }

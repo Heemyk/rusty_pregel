@@ -7,9 +7,11 @@
 //! to determine which worker owns a given vertex.
 
 pub mod graph;
+pub mod graph_loader;
 pub mod partitioner;
 pub mod vertex_store;
 
 pub use graph::GraphPartition;
+pub use graph_loader::load_and_partition;
 pub use partitioner::partition;
 pub use vertex_store::VertexData;

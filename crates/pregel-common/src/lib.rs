@@ -12,5 +12,6 @@ pub mod errors;
 pub mod serialization;
 pub mod types;
 
+pub use config::PartitionConfig;
 pub use errors::{PregelError, Result};
-pub use types::{Message, VertexId, WorkerId};
+pub use types::{ComputeInput, ComputeResultWire, Message, VertexId, WorkerId};

@@ -36,9 +36,20 @@ pub struct WorkerConfig {
 /// * `workers` - How many worker processes to spawn (parallelism level)
 /// * `program_path` - Path to the WASM module (e.g., `pagerank.wasm`)
 /// * `graph_path` - Where the graph data lives (e.g., `s3://bucket/graph` or local path)
+/// * `partition` - Optional partition strategy. Default: hash. Use CustomFile for user-defined mapping.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobConfig {
     pub workers: usize,
     pub program_path: String,
     pub graph_path: String,
+    #[serde(default)]
+    pub partition: Option<PartitionConfig>,
+}
+
+/// Partition strategy configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PartitionConfig {
+    Hash,
+    CustomFile { path: String },
 }

@@ -10,11 +10,16 @@
 //! Used by both the coordinator and workers.
 
 pub mod aggregator;
+pub mod algo;
 pub mod partition;
 pub mod runtime;
 pub mod scheduler;
 pub mod superstep;
 
-pub use partition::{partition, PartitionMetadata};
+pub use algo::Algorithm;
+pub use partition::{
+    partition, load_strategy, CustomPartition, HashPartition, PartitionMetadata, PartitionStrategy,
+    PartitionStrategyImpl,
+};
 pub use runtime::RuntimeConfig;
 pub use superstep::Superstep;

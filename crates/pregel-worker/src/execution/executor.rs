@@ -10,7 +10,9 @@ use pregel_wasm::{WasmExecutor, WasmModule};
 ///
 /// **Current state:** Placeholder. Returns empty vec. Full impl will wire
 /// up WasmExecutor::compute() with proper serialization.
+/// Placeholder for WASM execution. Currently native algorithms run directly in vertex_loop.
 pub struct VertexExecutor {
+    #[allow(dead_code)]
     pub(crate) wasm_executor: WasmExecutor,
 }
 
