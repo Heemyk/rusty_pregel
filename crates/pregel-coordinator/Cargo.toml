@@ -1,0 +1,9 @@
+[package]
+name = "pregel-coordinator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pregel-common = { path = "../pregel-common" }
+pregel-core = { path = "../pregel-core" }
+tokio = { version = "1", features = ["sync"] }

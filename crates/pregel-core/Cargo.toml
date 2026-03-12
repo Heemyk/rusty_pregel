@@ -1,0 +1,7 @@
+[package]
+name = "pregel-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pregel-common = { path = "../pregel-common" }

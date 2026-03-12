@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/pregel-common",
+    "crates/pregel-sdk",
+    "crates/pregel-core",
+    "crates/pregel-storage",
+    "crates/pregel-messaging",
+    "crates/pregel-wasm",
+    "crates/pregel-checkpoint",
+    "crates/pregel-worker",
+    "crates/pregel-coordinator",
+    "crates/pregel-cli",
+    "examples/pagerank",
+    "examples/connected_components",
+    "examples/shortest_path",
+]

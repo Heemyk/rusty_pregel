@@ -1,0 +1,13 @@
+[package]
+name = "pregel-worker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pregel-common = { path = "../pregel-common" }
+pregel-core = { path = "../pregel-core" }
+pregel-messaging = { path = "../pregel-messaging" }
+pregel-storage = { path = "../pregel-storage" }
+pregel-wasm = { path = "../pregel-wasm" }
+pregel-checkpoint = { path = "../pregel-checkpoint" }
+tokio = { version = "1", features = ["full"] }

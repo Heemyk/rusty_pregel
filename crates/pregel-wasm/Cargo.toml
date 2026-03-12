@@ -1,0 +1,8 @@
+[package]
+name = "pregel-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pregel-common = { path = "../pregel-common" }
+wasmtime = "22"

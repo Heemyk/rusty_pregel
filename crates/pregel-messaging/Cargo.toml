@@ -1,0 +1,8 @@
+[package]
+name = "pregel-messaging"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pregel-common = { path = "../pregel-common" }
+tokio = { version = "1", features = ["sync"] }
