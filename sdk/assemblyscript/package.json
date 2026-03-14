@@ -1,0 +1,12 @@
+{
+  "name": "pregel-algo-as",
+  "version": "0.1.0",
+  "description": "Pregel vertex algorithm in AssemblyScript - compiles to WASM",
+  "scripts": {
+    "asbuild:debug": "asc assembly/index.ts -o build/algo.debug.wasm -b build/algo.debug.wat --debug",
+    "asbuild:release": "asc assembly/index.ts -o build/algo.release.wasm -O3 --noAssert --initialMemory 2 --runtime stub"
+  },
+  "devDependencies": {
+    "assemblyscript": "^0.27.0"
+  }
+}

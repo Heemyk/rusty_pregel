@@ -1,0 +1,16 @@
+{
+  "name": "pregel-sdk",
+  "version": "0.1.0",
+  "description": "Pregel SDK for TypeScript — VertexProgram and ABI types",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["pregel", "graph", "vertex", "wasm"],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0"
+  }
+}

@@ -3,7 +3,7 @@
 //! Format: one edge per line, "src dest" or "src dest weight". Comments (#) and empty lines ignored.
 
 use pregel_common::{Result, VertexId};
-use pregel_core::{Algorithm, PartitionStrategyImpl};
+use pregel_core::{Algorithm, AlgoMetadata, PartitionStrategyImpl, ResultQuery};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -97,5 +97,30 @@ pub fn reset_partition_for_algo(
                 bincode::serialize(&dist).unwrap_or_default()
             }
         };
+    }
+}
+
+/// Extract vertex results from a partition per algorithm metadata.
+/// Used when workers halt to report job results to the coordinator.
+pub fn extract_partition_results(
+    partition: &crate::GraphPartition,
+    algo: Algorithm,
+) -> Vec<(VertexId, Vec<u8>)> {
+    let meta = AlgoMetadata::for_algo(algo);
+    match &meta.query {
+        ResultQuery::AllVertexValues => partition
+            .vertices
+            .iter()
+            .map(|(vid, v)| (*vid, v.value.clone()))
+            .collect(),
+        ResultQuery::VertexSubset(ids) => ids
+            .iter()
+            .filter_map(|vid| {
+                partition
+                    .vertices
+                    .get(vid)
+                    .map(|v| (*vid, v.value.clone()))
+            })
+            .collect(),
     }
 }

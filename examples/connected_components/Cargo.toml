@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 pregel-sdk = { path = "../../crates/pregel-sdk" }
 pregel-common = { path = "../../crates/pregel-common" }
+bincode = "1.3"

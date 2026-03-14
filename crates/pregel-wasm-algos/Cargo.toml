@@ -8,5 +8,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pregel-common = { path = "../pregel-common" }
+pregel-sdk = { path = "../pregel-sdk" }
 bincode = "1"
 serde = { version = "1", features = ["derive"] }

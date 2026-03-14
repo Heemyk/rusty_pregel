@@ -5,6 +5,9 @@ use crate::execution::vertex_loop::ComputeResult;
 
 /// PageRank: each vertex sends rank/out_degree to each neighbor.
 /// value = 0.15 + 0.85 * sum(messages)
+/// Vote to halt when rank change (delta) is below epsilon (convergence).
+const PAGERANK_EPSILON: f64 = 1e-6;
+
 pub fn pagerank_compute(input: &ComputeInput) -> ComputeResult {
     let initial_rank = input
         .value
@@ -28,8 +31,17 @@ pub fn pagerank_compute(input: &ComputeInput) -> ComputeResult {
     if out_degree <= 0.0 {
         return ComputeResult::halt(vec![]);
     }
-    let contribution = new_rank / out_degree;
 
+    // Superstep 0: no messages yet, always send to bootstrap.
+    // Later steps: vote to halt when converged (|Δ| < ε).
+    if !input.messages.is_empty() {
+        let delta = (new_rank - initial_rank).abs();
+        if delta < PAGERANK_EPSILON {
+            return ComputeResult::halt(vec![]);
+        }
+    }
+
+    let contribution = new_rank / out_degree;
     let mut outgoing = Vec::new();
     for &target in &input.edges {
         let payload = bincode::serialize(&contribution).unwrap();
@@ -156,6 +168,8 @@ mod tests {
             value: bincode::serialize(&0.5_f64).unwrap(),
             edges: vec![2, 3],
             messages: vec![],
+            superstep: 0,
+            total_vertices: 4,
         };
         let out = pagerank_compute(&input).outgoing;
         assert_eq!(out.len(), 2);
@@ -173,6 +187,8 @@ mod tests {
                 (0, bincode::serialize(&0.1_f64).unwrap()),
                 (1, bincode::serialize(&0.2_f64).unwrap()),
             ],
+            superstep: 1,
+            total_vertices: 4,
         };
         let out = pagerank_compute(&input).outgoing;
         assert_eq!(out.len(), 1);
@@ -188,6 +204,8 @@ mod tests {
             value: bincode::serialize(&5u64).unwrap(),
             edges: vec![3, 7],
             messages: vec![(99, bincode::serialize(&2u64).unwrap())],
+            superstep: 1,
+            total_vertices: 100,
         };
         let out = connected_components_compute(&input).outgoing;
         assert_eq!(out.len(), 3); // 2 edges + 1 reverse edge (source 99)
@@ -201,7 +219,9 @@ mod tests {
             vertex_id: 3,
             value: bincode::serialize(&3u64).unwrap(),
             edges: vec![1, 2],
-            messages: vec![(0, bincode::serialize(&3u64).unwrap())], // same as current -> halt
+            messages: vec![(0, bincode::serialize(&3u64).unwrap())],
+            superstep: 1,
+            total_vertices: 4,
         };
         let out = connected_components_compute(&input).outgoing;
         assert_eq!(out.len(), 0);
@@ -213,7 +233,9 @@ mod tests {
             vertex_id: 2,
             value: bincode::serialize(&2u64).unwrap(),
             edges: vec![0, 1, 3],
-            messages: vec![], // superstep 0
+            messages: vec![],
+            superstep: 0,
+            total_vertices: 4,
         };
         let out = connected_components_compute(&input).outgoing;
         assert_eq!(out.len(), 3);
@@ -230,6 +252,8 @@ mod tests {
             value: bincode::serialize(&0u64).unwrap(),
             edges: vec![1, 2],
             messages: vec![],
+            superstep: 0,
+            total_vertices: 5,
         };
         let out = shortest_path_compute(&input).outgoing;
         assert_eq!(out.len(), 2, "source sends to both neighbors");
@@ -243,7 +267,9 @@ mod tests {
             vertex_id: 3,
             value: bincode::serialize(&u64::MAX).unwrap(),
             edges: vec![4],
-            messages: vec![(1, bincode::serialize(&2u64).unwrap())], // dist 2 -> we become 3
+            messages: vec![(1, bincode::serialize(&2u64).unwrap())],
+            superstep: 1,
+            total_vertices: 5,
         };
         let res = shortest_path_compute(&input);
         assert!(res.new_value.is_some());
@@ -260,7 +286,9 @@ mod tests {
             vertex_id: 1,
             value: bincode::serialize(&1u64).unwrap(),
             edges: vec![0],
-            messages: vec![(2, bincode::serialize(&2u64).unwrap())], // 2 sent us their value
+            messages: vec![(2, bincode::serialize(&2u64).unwrap())],
+            superstep: 1,
+            total_vertices: 3,
         };
         let out = connected_components_compute(&input).outgoing;
         assert_eq!(out.len(), 1, "must send our value 1 back to vertex 2");

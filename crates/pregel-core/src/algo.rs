@@ -1,4 +1,4 @@
-//! Algorithm selection.
+//! Algorithm selection and result-extraction metadata.
 
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +10,47 @@ pub enum Algorithm {
     ConnectedComponents,
     /// Single-source shortest path (unweighted). Source vertex = 0.
     ShortestPath,
+}
+
+/// Per-worker query: what to extract from a partition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResultQuery {
+    AllVertexValues,
+    VertexSubset(Vec<u64>),
+}
+
+/// Coordinator post-function: how to combine worker outputs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PostFunction {
+    ConcatAndSort,
+    Concat,
+    SingleValue,
+}
+
+/// Metadata for result extraction per algorithm.
+#[derive(Debug, Clone)]
+pub struct AlgoMetadata {
+    pub query: ResultQuery,
+    pub post: PostFunction,
+}
+
+impl AlgoMetadata {
+    pub fn for_algo(algo: Algorithm) -> Self {
+        match algo {
+            Algorithm::Pagerank => AlgoMetadata {
+                query: ResultQuery::AllVertexValues,
+                post: PostFunction::Concat,
+            },
+            Algorithm::ConnectedComponents => AlgoMetadata {
+                query: ResultQuery::AllVertexValues,
+                post: PostFunction::ConcatAndSort,
+            },
+            Algorithm::ShortestPath => AlgoMetadata {
+                query: ResultQuery::AllVertexValues,
+                post: PostFunction::ConcatAndSort,
+            },
+        }
+    }
 }
 
 impl std::str::FromStr for Algorithm {

@@ -4,6 +4,7 @@
 //! to define what happens at each vertex during each superstep.
 
 use crate::{Context, Vertex};
+use pregel_common::VertexId;
 
 /// The main trait for implementing a Pregel algorithm.
 ///
@@ -20,8 +21,8 @@ use crate::{Context, Vertex};
 /// # The compute() Method
 ///
 /// * `vertex` - The current vertex. You can read and *modify* its `value`.
-/// * `messages` - Messages sent TO this vertex in the previous superstep.
-///   Empty on superstep 0 (no messages yet).
+/// * `messages` - `(source_id, payload)` pairs from the previous superstep.
+///   Empty on superstep 0 (no messages yet). Use `source_id` for reverse edges (e.g. CC).
 /// * `ctx` - Use `ctx.send(target, msg)` to send messages. They'll be delivered
 ///   at the start of the next superstep.
 ///
@@ -36,8 +37,8 @@ use crate::{Context, Vertex};
 /// PageRank: each vertex sends its rank / out_degree to each neighbor.
 ///
 /// ```ignore
-/// fn compute(&mut self, vertex: &mut Vertex<f64>, messages: &[f64], ctx: &mut Context<f64>) {
-///     let sum: f64 = messages.iter().sum();
+/// fn compute(&mut self, vertex: &mut Vertex<f64>, messages: &[(VertexId, f64)], ctx: &mut Context<f64>) {
+///     let sum: f64 = messages.iter().map(|(_, m)| *m).sum();
 ///     vertex.value = 0.15 + 0.85 * sum;
 ///     let contribution = vertex.value / vertex.edges.len() as f64;
 ///     for &neighbor in &vertex.edges {
@@ -54,10 +55,13 @@ pub trait VertexProgram: Send + Sync {
 
     /// Called once per vertex per superstep. Update `vertex.value` and use
     /// `ctx.send()` to send messages to other vertices.
+    ///
+    /// `messages` are `(source_vertex_id, payload)` from the previous superstep.
+    /// Use `source` to build reverse edges (e.g. CC neighbors = edges ∪ senders).
     fn compute(
         &mut self,
         vertex: &mut Vertex<Self::VertexValue>,
-        messages: &[Self::Message],
+        messages: &[(VertexId, Self::Message)],
         ctx: &mut Context<Self::Message>,
     );
 }

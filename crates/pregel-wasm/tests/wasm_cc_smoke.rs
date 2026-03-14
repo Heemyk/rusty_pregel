@@ -22,6 +22,8 @@ fn wasm_cc_produces_outgoing_in_superstep0() {
         value: bincode::serialize(&0u64).unwrap(),
         edges: vec![1, 2],
         messages: vec![],
+        superstep: 0,
+        total_vertices: 3,
     };
     let serialized = bincode::serialize(&input).unwrap();
     let output = executor.compute(&module, &serialized).unwrap();

@@ -47,6 +47,9 @@ pub enum PregelError {
 
     #[error("Checkpoint error: {0}")]
     Checkpoint(String),
+
+    #[error("WASM guest error: {0} (ABI code {1})")]
+    WasmGuest(String, i32),
 }
 
 /// Shorthand for `std::result::Result<T, PregelError>`.

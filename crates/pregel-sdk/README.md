@@ -4,6 +4,8 @@
 
 **Who uses it:** Algorithm authors. The examples (pagerank, connected_components, shortest_path) depend on this crate. In the future, Python/Go/TypeScript SDKs will compile down to the same concepts.
 
+**→ WASM:** Implement `VertexProgram`, then use `pregel_sdk::export_wasm_compute!(YourAlgo)` to emit the WASM ABI. Build with `--target wasm32-unknown-unknown`. See `docs/SDK_ARCHITECTURE.md` for the full flow.
+
 ## Core Idea: The VertexProgram Trait
 
 In Pregel, you don't write a main loop. You implement the `VertexProgram` trait, which has one method: `compute`. The runtime calls `compute` for each vertex, in each superstep, passing in:

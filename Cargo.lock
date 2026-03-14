@@ -455,6 +455,7 @@ dependencies = [
 name = "connected-components-example"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "pregel-common",
  "pregel-sdk",
 ]
@@ -1841,6 +1842,7 @@ dependencies = [
 name = "pagerank-example"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "pregel-common",
  "pregel-sdk",
 ]
@@ -2040,6 +2042,8 @@ name = "pregel-coordinator"
 version = "0.1.0"
 dependencies = [
  "axum 0.7.9",
+ "base64 0.22.1",
+ "bincode",
  "pregel-common",
  "pregel-core",
  "prost",
@@ -2084,7 +2088,9 @@ dependencies = [
 name = "pregel-sdk"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "pregel-common",
+ "serde",
 ]
 
 [[package]]
@@ -2111,6 +2117,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "pregel-common",
+ "pregel-sdk",
  "serde",
 ]
 
@@ -2879,6 +2886,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 name = "shortest-path-example"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "pregel-common",
  "pregel-sdk",
 ]

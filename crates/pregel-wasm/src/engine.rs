@@ -1,10 +1,10 @@
 //! The WASM execution engine.
 //!
 //! ABI: input bytes → output bytes. Host writes input to linear memory,
-//! calls compute export, reads output back. See docs/WASM_ABI.md.
+//! calls compute export, reads output back. See docs/ABI_SPEC.md and docs/WASM_ABI.md.
 
 use crate::WasmModule;
-use pregel_common::Result;
+use pregel_common::{AbiErrorCode, PregelError, Result};
 use wasmtime::{Engine, Linker, Module, Store};
 
 /// Input and output share the first page. Many wasm32 modules start with 64KB.
@@ -13,8 +13,19 @@ const INPUT_MAX_LEN: usize = 32 * 1024;
 const OUTPUT_OFFSET: u32 = 32 * 1024;
 const OUTPUT_MAX_LEN: u32 = 32 * 1024;
 
-fn to_err(e: impl ToString) -> pregel_common::PregelError {
-    pregel_common::PregelError::Serialization(e.to_string())
+fn to_err(e: impl ToString) -> PregelError {
+    PregelError::Serialization(e.to_string())
+}
+
+fn abi_error_name(code: i32) -> &'static str {
+    AbiErrorCode::from_i32(code).map_or("UNKNOWN", |c| match c {
+        AbiErrorCode::Invalid => "EINVALID",
+        AbiErrorCode::Deserialize => "EDESERIALIZE",
+        AbiErrorCode::Serialize => "ESERIALIZE",
+        AbiErrorCode::OutputOverrun => "EOUTPUT_OVERRUN",
+        AbiErrorCode::Alloc => "EALLOC",
+        AbiErrorCode::User => "EUSER",
+    })
 }
 
 /// Executes WASM vertex compute functions.
@@ -61,7 +72,10 @@ impl WasmExecutor {
             .map_err(to_err)?;
 
         if result < 0 {
-            return Ok(Vec::new());
+            return Err(PregelError::WasmGuest(
+                abi_error_name(result).to_string(),
+                result,
+            ));
         }
 
         let out_len = result as usize;

@@ -4,4 +4,5 @@ pub mod executor;
 pub mod vertex_loop;
 
 pub use executor::VertexExecutor;
-pub use vertex_loop::{execute_superstep_parallel, ComputeInput};
+pub use pregel_common::ComputeInput;
+pub use vertex_loop::execute_superstep_parallel;

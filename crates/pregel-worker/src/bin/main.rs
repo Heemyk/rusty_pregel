@@ -5,7 +5,7 @@ use pregel_common::WorkerId;
 use pregel_core::{Algorithm, HashPartition, PartitionStrategyImpl};
 use pregel_messaging::MessageBatch;
 use pregel_observability::{init_prometheus_observer, init_verbose_observer, observe, verbose_level, ObservableEvent};
-use pregel_storage::{load_and_partition, reset_partition_for_algo, GraphPartition};
+use pregel_storage::{extract_partition_results, load_and_partition, reset_partition_for_algo, GraphPartition};
 use pregel_worker::coordinator_client::CoordinatorGrpcClient;
 use pregel_worker::execution::execute_superstep_parallel;
 use pregel_worker::messaging::MessageInbox;
@@ -224,6 +224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let partition_impl: Arc<dyn PartitionStrategyImpl> = Arc::new(HashPartition);
     let load_algo = if session { Algorithm::ConnectedComponents } else { algo };
     let partitions = load_and_partition(&graph_path, worker_count, partition_impl.as_ref(), load_algo)?;
+    let initial_total_vertices = partitions.iter().map(|p| p.vertices.len()).sum::<usize>() as u64;
     let partition = partitions
         .into_iter()
         .nth(worker_id as usize)
@@ -263,17 +264,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let checkpoint_manager = checkpoint_dir.map(|d| CheckpointManager::new(d));
 
+    let mut total_vertices = initial_total_vertices;
+    let mut job_id = 1u32; // default for first/only job
+
     'job_loop: loop {
         if session {
-            let (job_id, algo_str, _program_str, total_vertices) =
+            let (jid, algo_str, _program_str, job_total) =
                 coordinator.wait_for_job_start().await?;
+            job_id = jid;
+            total_vertices = job_total;
             algo = algo_str.parse().map_err(|e: String| format!("invalid algo from coordinator: {}", e))?;
             reset_partition_for_algo(
                 &mut worker_partition.write().unwrap(),
                 algo,
                 total_vertices,
             );
-            eprintln!("  [worker {worker_id}] job {job_id} started (algo={algo_str})");
+            eprintln!("  [worker {worker_id}] job {jid} started (algo={algo_str})");
         }
 
         let mut current_superstep = 0u64;
@@ -358,11 +364,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let exec_clone = wasm_executor.clone();
         let mod_clone = wasm_module.clone();
 
+        let total_for_step = total_vertices;
         let (value_updates, outgoing) = tokio::task::spawn_blocking(move || {
             execute_superstep_parallel(
                 &partition_for_blocking,
                 &inbox_map,
                 current_superstep,
+                total_for_step,
                 algo,
                 exec_clone.as_deref(),
                 mod_clone.as_deref(),
@@ -370,7 +378,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 worker_count,
             )
         })
-        .await?;
+        .await
+        .map_err(|e| pregel_common::PregelError::Worker(format!("superstep panic: {:?}", e)))??;
 
         for (vid, new_value) in value_updates {
             if let Some(v) = worker_partition.write().unwrap().vertices.get_mut(&vid) {
@@ -428,7 +437,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
 
         tokio::task::yield_now().await;
-        eprintln!("  [worker {worker_id}] DBG: send_loop step {current_superstep}");
+        if verbose_level() >= 2 {
+            eprintln!("  [worker {worker_id}] DBG: send_loop step {current_superstep}");
+        }
         for (target_worker, batch) in batches {
             if target_worker == worker_id {
                 // Bypass network for self-send: inject directly into local inbox channel.
@@ -457,12 +468,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         coordinator
             .report_superstep_done(worker_id, current_superstep, total_msgs as u64)
             .await?;
-        eprintln!("  [worker {worker_id}] DBG: wait_advance step {current_superstep}");
+        if verbose_level() >= 2 {
+            eprintln!("  [worker {worker_id}] DBG: wait_advance step {current_superstep}");
+        }
         current_superstep = coordinator.wait_for_advance(current_superstep).await?;
-        eprintln!("  [worker {worker_id}] DBG: advanced to {current_superstep}");
+        if verbose_level() >= 2 {
+            eprintln!("  [worker {worker_id}] DBG: advanced to {current_superstep}");
+        }
 
         if current_superstep == u64::MAX {
             eprintln!("  [worker {worker_id}] job complete (all halted)");
+            let partition = worker_partition.read().unwrap().clone();
+            let vertices = extract_partition_results(&partition, algo);
+            if let Err(e) = coordinator.report_job_results(job_id, worker_id, vertices).await {
+                eprintln!("  [worker {worker_id}] WARN: report_job_results failed: {e}");
+            }
             if session {
                 break 'bsp;
             } else {

@@ -1,8 +1,7 @@
 //! Parallel vertex execution within a superstep.
 
-use pregel_common::{ComputeResultWire, Message, VertexId};
+use pregel_common::{ComputeInput, ComputeResultWire, Message, Result, VertexId};
 
-pub use pregel_common::ComputeInput;
 use pregel_core::{Algorithm, PartitionStrategyImpl};
 use pregel_storage::GraphPartition;
 use pregel_wasm::{WasmExecutor, WasmModule};
@@ -32,16 +31,18 @@ impl ComputeResult {
 /// Execute one superstep in parallel using rayon (CPU-bound work).
 /// Runs inside tokio::spawn_blocking so we don't block the async runtime.
 /// In superstep 0, all vertices run (no messages yet). In superstep > 0, only vertices with messages run.
+/// Returns error on WASM guest failure (ABI error codes propagated).
 pub fn execute_superstep_parallel(
     partition: &Arc<GraphPartition>,
     inbox: &HashMap<VertexId, Vec<Message>>,
     superstep: u64,
+    total_vertices: u64,
     algo: Algorithm,
     wasm_executor: Option<&WasmExecutor>,
     wasm_module: Option<&WasmModule>,
     _partition_impl: &dyn PartitionStrategyImpl,
     _worker_count: usize,
-) -> (Vec<(VertexId, Vec<u8>)>, Vec<(VertexId, VertexId, Vec<u8>)>) {
+) -> Result<(Vec<(VertexId, Vec<u8>)>, Vec<(VertexId, VertexId, Vec<u8>)>)> {
     let vertices_to_run: Vec<_> = if superstep == 0 {
         partition.vertices.iter().map(|(vid, v)| (*vid, v.clone())).collect()
     } else {
@@ -53,9 +54,9 @@ pub fn execute_superstep_parallel(
             .collect()
     };
 
-    let results: Vec<(Option<Vec<u8>>, Vec<(VertexId, Vec<u8>)>)> = vertices_to_run
+    let results: Result<Vec<_>> = vertices_to_run
         .par_iter()
-        .map(|(vertex_id, vertex_data)| {
+        .map(|(vertex_id, vertex_data)| -> Result<(Option<Vec<u8>>, Vec<(VertexId, Vec<u8>)>)> {
             let messages: Vec<(VertexId, Vec<u8>)> = inbox
                 .get(vertex_id)
                 .map(|m| m.iter().map(|msg| (msg.source, msg.payload.clone())).collect())
@@ -66,15 +67,15 @@ pub fn execute_superstep_parallel(
                 value: vertex_data.value.clone(),
                 edges: vertex_data.edges.clone(),
                 messages,
+                superstep,
+                total_vertices,
             };
 
             let result = if let (Some(exec), Some(modu)) = (wasm_executor, wasm_module) {
                 let bytes = bincode::serialize(&input).unwrap();
-                let output = exec.compute(modu, &bytes).unwrap_or_default();
-                let wire: ComputeResultWire = bincode::deserialize(&output).unwrap_or(ComputeResultWire {
-                    new_value: None,
-                    outgoing: vec![],
-                });
+                let output = exec.compute(modu, &bytes)?;
+                let wire: ComputeResultWire = bincode::deserialize(&output)
+                    .map_err(|e| pregel_common::PregelError::Serialization(e.to_string()))?;
                 (wire.new_value, wire.outgoing)
             } else {
                 let res = match algo {
@@ -84,10 +85,11 @@ pub fn execute_superstep_parallel(
                 };
                 (res.new_value, res.outgoing)
             };
-            result
+            Ok(result)
         })
         .collect();
 
+    let results = results?;
     let mut value_updates = Vec::new();
     let mut outgoing = Vec::new();
     for ((vertex_id, _), (new_val, msgs)) in vertices_to_run.iter().zip(results.iter()) {
@@ -98,5 +100,5 @@ pub fn execute_superstep_parallel(
             outgoing.push((*vertex_id, *target, payload.clone()));
         }
     }
-    (value_updates, outgoing)
+    Ok((value_updates, outgoing))
 }

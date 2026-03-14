@@ -10,33 +10,29 @@ use pregel_common::VertexId;
 ///    Messages are buffered and delivered at the start of the next superstep.
 ///
 /// 2. **Query superstep** – `ctx.superstep()` tells you which superstep you're in.
-///    Superstep 0: no messages yet. Superstep 1: first round of messages.
+/// 3. **Query total vertices** – `ctx.total_vertices()` for graph-wide values (e.g. PageRank 1/N).
+/// 4. **Aggregators** (stub) – `ctx.aggregate(name, value)` for global reduction (future).
 ///
 /// # Generic
 ///
 /// `Context<M>` is generic over the message type `M`, matching your
 /// `VertexProgram::Message` type.
-///
-/// # Internal Structure
-///
-/// The runtime builds `Context` before calling your compute. After compute
-/// returns, it drains `outgoing` and routes those messages to the correct
-/// workers (based on partition(target_id)).
 #[derive(Debug, Default)]
 pub struct Context<M> {
     /// Current superstep number (0-indexed).
     pub superstep: u64,
-
+    /// Total vertices in the graph.
+    pub total_vertices: u64,
     /// Messages to send. Pairs of (target_vertex_id, message).
-    /// The runtime reads this after compute() returns.
     pub outgoing: Vec<(VertexId, M)>,
 }
 
 impl<M> Context<M> {
-    /// Create a new context for the given superstep.
-    pub fn new(superstep: u64) -> Self {
+    /// Create a new context for the given superstep and total vertices.
+    pub fn new(superstep: u64, total_vertices: u64) -> Self {
         Self {
             superstep,
+            total_vertices,
             outgoing: Vec::new(),
         }
     }
@@ -52,5 +48,17 @@ impl<M> Context<M> {
     /// Returns the current superstep number.
     pub fn superstep(&self) -> u64 {
         self.superstep
+    }
+
+    /// Returns the total number of vertices in the graph.
+    pub fn total_vertices(&self) -> u64 {
+        self.total_vertices
+    }
+
+    /// Contribute to a named aggregator (stub; not yet implemented by runtime).
+    #[allow(unused_variables)]
+    pub fn aggregate(&mut self, name: &str, value: impl std::any::Any) {
+        // TODO: runtime will collect and reduce aggregator values
+        let _ = (name, value);
     }
 }

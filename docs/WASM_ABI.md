@@ -2,6 +2,8 @@
 
 The vertex compute function is invoked by the runtime for each vertex each superstep.
 
+**See also:** `docs/ABI_SPEC.md` for the full formal specification (validation, error codes, security).
+
 ## Implementation
 
 ### Host (runtime) side

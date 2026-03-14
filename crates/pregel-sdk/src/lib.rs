@@ -30,7 +30,13 @@ pub mod context;
 pub mod message;
 pub mod program;
 pub mod vertex;
+pub mod wasm_export;
+pub mod wire;
 
 pub use context::Context;
 pub use program::VertexProgram;
 pub use vertex::Vertex;
+pub use wire::vertex_program_compute;
+
+/// Re-export for convenience in algorithm code.
+pub use pregel_common::VertexId;

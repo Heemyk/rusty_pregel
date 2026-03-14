@@ -14,4 +14,4 @@ pub mod types;
 
 pub use config::PartitionConfig;
 pub use errors::{PregelError, Result};
-pub use types::{ComputeInput, ComputeResultWire, Message, VertexId, WorkerId};
+pub use types::{AbiErrorCode, ComputeInput, ComputeResultWire, Message, VertexId, WorkerId};

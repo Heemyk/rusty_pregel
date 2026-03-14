@@ -8,7 +8,7 @@ use pregel_core::{Algorithm, HashPartition, PartitionStrategyImpl};
 use pregel_storage::load_and_partition;
 use pregel_worker::execution::vertex_loop::execute_superstep_parallel;
 use pregel_worker::native_algo::{connected_components_compute, pagerank_compute};
-use pregel_worker::execution::vertex_loop::ComputeInput;
+use pregel_common::ComputeInput;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Arc;
@@ -30,7 +30,9 @@ fn pagerank_messages_are_f64_contributions() {
         vertex_id: 0,
         value: bincode::serialize(&0.25_f64).unwrap(),
         edges: vec![1, 2],
-        messages: vec![], // (source, payload)
+        messages: vec![],
+        superstep: 0,
+        total_vertices: 4,
     };
     let out = pagerank_compute(&input).outgoing;
     assert_eq!(out.len(), 2);
@@ -47,6 +49,8 @@ fn cc_messages_are_u64_component_ids() {
         value: bincode::serialize(&10u64).unwrap(),
         edges: vec![1, 2, 3],
         messages: vec![(0, bincode::serialize(&5u64).unwrap())],
+        superstep: 1,
+        total_vertices: 11,
     };
     let out = connected_components_compute(&input).outgoing;
     assert!(!out.is_empty());
@@ -69,12 +73,14 @@ fn pagerank_via_execute_superstep_parallel() {
         &partition,
         &inbox,
         0,
+        3u64,
         Algorithm::Pagerank,
         None,
         None,
         partition_impl.as_ref(),
         1,
-    );
+    )
+    .expect("superstep should succeed");
 
     assert!(!out.is_empty());
     for (_source, target, payload) in &out {
@@ -105,12 +111,14 @@ fn cc_via_execute_superstep_parallel() {
         &partition,
         &inbox,
         1,
+        4u64,
         Algorithm::ConnectedComponents,
         None,
         None,
         partition_impl.as_ref(),
         1,
-    );
+    )
+    .expect("superstep should succeed");
 
     for (_source, _target, payload) in &out {
         let v: u64 = bincode::deserialize(payload).expect("CC must emit u64");

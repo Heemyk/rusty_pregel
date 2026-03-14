@@ -16,7 +16,7 @@ pub mod runtime;
 pub mod scheduler;
 pub mod superstep;
 
-pub use algo::Algorithm;
+pub use algo::{AlgoMetadata, Algorithm, PostFunction, ResultQuery};
 pub use partition::{
     partition, load_strategy, CustomPartition, HashPartition, PartitionMetadata, PartitionStrategy,
     PartitionStrategyImpl,

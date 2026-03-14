@@ -34,8 +34,8 @@ Prioritized plan for next features and improvements.
 
 ### 2.1 WASM CC or PageRank Module ✅
 - [x] Build a WASM module (`pregel-wasm-algos`) that implements ComputeInput → ComputeResultWire ABI
-- [ ] Use pregel-sdk or wasm-bindgen to produce compatible `.wasm`
-- [ ] Document ABI in `docs/WASM_ABI.md` (if not done)
+- [x] Use pregel-sdk: impl VertexProgram + `export_wasm_compute!(Algo)` → compatible `.wasm`
+- [x] Document ABI in `docs/WASM_ABI.md`, SDK flow in `docs/SDK_ARCHITECTURE.md`
 
 ### 2.2 Wire WASM Through Engine ✅
 - [x] Worker loads WASM from path when `--program <path>` or `--wasm` provided
@@ -98,24 +98,18 @@ Prioritized plan for next features and improvements.
 
 ---
 
-## Phase 5: Result Aggregation
+## Phase 5: Result Aggregation ✅
 
-Extend algorithm metadata with **query** (per-worker extract) and **post-function** (coordinator combine) so the coordinator can return computation results to the client instead of only `{job_id, algo}`.
+Extend algorithm metadata with **query** (per-worker extract) and **post-function** (coordinator combine) so the coordinator can return computation results to the client.
 
-### 5.1 Algo Metadata: Query + Post-Function
-- [ ] Extend `Algorithm` / add `AlgoMetadata` with:
-  - **Query**: what to run on each worker's partition to extract "my piece" of the result
-  - **Post-function**: how the coordinator combines worker outputs into the final answer
-- [ ] Example mappings:
-  - **CC**: Query = all `(vertex_id, component_id)` | Post = concat, sort by vid
-  - **PageRank**: Query = all `(vertex_id, score)` | Post = concat or top-K
-  - **ShortestPath**: Query = `(vertex_id, distance)` or subset | Post = concat or single value
+### 5.1 Algo Metadata: Query + Post-Function ✅
+- [x] `AlgoMetadata`, `ResultQuery`, `PostFunction` in pregel-core
+- [x] CC/PR/SSSP: Query = AllVertexValues | Post = ConcatAndSort or Concat
 
-### 5.2 Protocol & Implementation
-- [ ] Coordinator: after all workers halt, request results per worker (gRPC or HTTP)
-- [ ] Workers: implement query on local partition → return `Vec<(VertexId, Vec<u8>)>` (or typed)
-- [ ] Coordinator: apply post-function → return JSON in `POST /jobs` response or `GET /jobs/:id/results`
-- [ ] CLI: `pregel job` prints or streams the result
+### 5.2 Protocol & Implementation ✅
+- [x] Workers: `ReportJobResults` RPC when halting; `extract_partition_results()` in pregel-storage
+- [x] Coordinator: collect results, apply post-function, block `POST /jobs` until done
+- [x] CLI: `pregel job` and `pregel submit` display result (vertices with decoded values)
 
 ### 5.3 ResultQuery / PostFunction Types (sketch)
 ```rust
@@ -134,7 +128,7 @@ pub enum PostFunction {
 
 ## Later / Backlog
 
-- **SDKs**: Flesh out pregel-sdk for Rust, Python (pyo3?), etc.
+- **SDKs**: Rust ✅, Python/Go/TS scaffolds in `sdk/`; see `docs/INTEGRATION_GUIDE.md`
 - **K8s Operator**: Deploy coordinator + workers as pods, manage lifecycle
 - **Raft Consensus**: Replace single coordinator with Raft for coordinator HA
 

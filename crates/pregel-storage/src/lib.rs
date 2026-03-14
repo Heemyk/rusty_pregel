@@ -12,6 +12,6 @@ pub mod partitioner;
 pub mod vertex_store;
 
 pub use graph::GraphPartition;
-pub use graph_loader::{load_and_partition, reset_partition_for_algo};
+pub use graph_loader::{extract_partition_results, load_and_partition, reset_partition_for_algo};
 pub use partitioner::partition;
 pub use vertex_store::VertexData;

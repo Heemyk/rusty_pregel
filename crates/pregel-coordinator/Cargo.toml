@@ -12,6 +12,8 @@ protoc-bin-vendored = "3"
 tonic-build = "0.11"
 
 [dependencies]
+base64 = "0.22"
+bincode = "1"
 prost = "0.12"
 tokio-stream = "0.1"
 pregel-common = { path = "../pregel-common" }
