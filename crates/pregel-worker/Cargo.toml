@@ -36,4 +36,5 @@ prost = "0.12"
 rayon = "1"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
 tonic = "0.11"

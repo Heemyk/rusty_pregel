@@ -76,3 +76,26 @@ pub fn load_and_partition(
 
     Ok(partitions)
 }
+
+/// Reset vertex values in a partition for a new algorithm run.
+/// Edges stay unchanged; only value bytes are updated per algo.
+pub fn reset_partition_for_algo(
+    partition: &mut crate::GraphPartition,
+    algo: Algorithm,
+    total_vertices: u64,
+) {
+    let n = total_vertices as f64;
+    for (vid, v) in partition.vertices.iter_mut() {
+        v.value = match algo {
+            Algorithm::Pagerank => {
+                let initial = 1.0 / n;
+                bincode::serialize(&initial).unwrap_or_default()
+            }
+            Algorithm::ConnectedComponents => bincode::serialize(vid).unwrap_or_default(),
+            Algorithm::ShortestPath => {
+                let dist = if *vid == 0 { 0u64 } else { u64::MAX };
+                bincode::serialize(&dist).unwrap_or_default()
+            }
+        };
+    }
+}

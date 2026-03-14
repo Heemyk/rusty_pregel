@@ -7,15 +7,16 @@ pub(crate) mod coordinator_proto {
 use coordinator_proto::coordinator_server::{Coordinator as CoordinatorTrait, CoordinatorServer};
 use coordinator_proto::{
     AdvanceNotification, GetCurrentSuperstepRequest, GetCurrentSuperstepResponse,
-    RegisterWorkerRequest, RegisterWorkerResponse, ReportSuperstepDoneRequest,
-    ReportSuperstepDoneResponse, WaitForAdvanceRequest, WaitForAllReadyRequest,
-    WaitForAllReadyResponse,
+    JobStartNotification, RegisterWorkerRequest, RegisterWorkerResponse,
+    ReportSuperstepDoneRequest, ReportSuperstepDoneResponse, WaitForAdvanceRequest,
+    WaitForAllReadyRequest, WaitForAllReadyResponse, WaitForJobStartRequest,
 };
 use pregel_common::WorkerId;
 use pregel_core::Superstep;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tokio::sync::{watch, Notify, RwLock};
+use std::time::{Duration, Instant};
+use tokio::sync::{broadcast, watch, Notify, RwLock};
 use tonic::{Request, Response, Status};
 
 
@@ -54,36 +55,88 @@ impl CoordinatorTrait for ArcCoordinator {
     ) -> Result<Response<Self::WaitForAdvanceStream>, Status> {
         CoordinatorTrait::wait_for_advance(self.0.as_ref(), request).await
     }
+    type WaitForJobStartStream = tokio_stream::wrappers::ReceiverStream<Result<JobStartNotification, Status>>;
+    async fn wait_for_job_start(
+        &self,
+        request: Request<WaitForJobStartRequest>,
+    ) -> Result<Response<Self::WaitForJobStartStream>, Status> {
+        CoordinatorTrait::wait_for_job_start(self.0.as_ref(), request).await
+    }
+}
+
+#[derive(Clone)]
+pub struct JobParams {
+    pub job_id: u32,
+    pub algo: String,
+    pub program: String,
+    pub total_vertices: u64,
 }
 
 struct CoordinatorService {
     expected_workers: usize,
     workers: Arc<RwLock<HashMap<WorkerId, (String, u64)>>>,
+    /// Last time each worker was seen (register or report). Used for timeout detection.
+    worker_last_seen: Arc<RwLock<HashMap<WorkerId, Instant>>>,
+    worker_timeout_secs: u64,
     all_ready: Arc<Notify>,
     current_superstep: Arc<RwLock<Superstep>>,
     barrier_reported: Arc<RwLock<HashMap<u64, HashMap<WorkerId, u64>>>>,
     advance_tx: watch::Sender<u64>,
+    job_start_tx: broadcast::Sender<JobParams>,
+    next_job_id: Arc<RwLock<u32>>,
     verbose: bool,
 }
 
 impl CoordinatorService {
-    fn new(expected_workers: usize, verbose: bool) -> (Self, watch::Receiver<u64>) {
+    fn new(
+        expected_workers: usize,
+        verbose: bool,
+        worker_timeout_secs: u64,
+    ) -> (Self, watch::Receiver<u64>, broadcast::Sender<JobParams>) {
         let (advance_tx, advance_rx) = watch::channel(0u64);
+        let (job_start_tx, _) = broadcast::channel(16);
         let svc = Self {
             expected_workers,
             workers: Arc::new(RwLock::new(HashMap::new())),
+            worker_last_seen: Arc::new(RwLock::new(HashMap::new())),
+            worker_timeout_secs,
             all_ready: Arc::new(Notify::new()),
             current_superstep: Arc::new(RwLock::new(Superstep::new(0))),
             barrier_reported: Arc::new(RwLock::new(HashMap::new())),
             advance_tx,
+            job_start_tx: job_start_tx.clone(),
+            next_job_id: Arc::new(RwLock::new(1)),
             verbose,
         };
-        (svc, advance_rx)
+        (svc, advance_rx, job_start_tx)
+    }
+
+    pub async fn submit_job(&self, algo: String, program: String) -> JobParams {
+        let total_vertices: u64 = self.workers.read().await.values().map(|(_, c)| c).sum();
+        let job_id = {
+            let mut id = self.next_job_id.write().await;
+            let j = *id;
+            *id = id.saturating_add(1);
+            j
+        };
+        let params = JobParams {
+            job_id,
+            algo: algo.clone(),
+            program: program.clone(),
+            total_vertices,
+        };
+        let _ = self.job_start_tx.send(params.clone());
+        // Reset coordinator for new run
+        *self.current_superstep.write().await = Superstep::new(0);
+        self.advance_tx.send_replace(0);
+        params
     }
 }
 
 #[tonic::async_trait]
 impl CoordinatorTrait for CoordinatorService {
+    type WaitForJobStartStream = tokio_stream::wrappers::ReceiverStream<Result<JobStartNotification, Status>>;
+
     async fn register_worker(
         &self,
         request: Request<RegisterWorkerRequest>,
@@ -95,6 +148,7 @@ impl CoordinatorTrait for CoordinatorService {
             w.insert(worker_id, (r.address, r.vertex_count));
             w.len()
         };
+        self.worker_last_seen.write().await.insert(worker_id, Instant::now());
         if count >= self.expected_workers {
             self.all_ready.notify_waiters();
         }
@@ -109,6 +163,8 @@ impl CoordinatorTrait for CoordinatorService {
         let worker_id = r.worker_id as WorkerId;
         let superstep = r.superstep;
         let messages_sent = r.messages_sent;
+
+        self.worker_last_seen.write().await.insert(worker_id, Instant::now());
 
         let worker_count = self.expected_workers;
         let mut barrier = self.barrier_reported.write().await;
@@ -188,15 +244,126 @@ impl CoordinatorTrait for CoordinatorService {
         drop(tx);
         Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)))
     }
+
+    async fn wait_for_job_start(
+        &self,
+        _request: Request<WaitForJobStartRequest>,
+    ) -> Result<Response<Self::WaitForJobStartStream>, Status> {
+        let mut job_rx = self.job_start_tx.subscribe();
+        let params = job_rx.recv().await.map_err(|e| {
+            Status::unavailable(format!("job start channel closed: {}", e))
+        })?;
+        let (tx, rx) = tokio::sync::mpsc::channel(4);
+        let _ = tx
+            .send(Ok(JobStartNotification {
+                job_id: params.job_id,
+                algo: params.algo,
+                program: params.program,
+                total_vertices: params.total_vertices,
+            }))
+            .await;
+        drop(tx);
+        Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)))
+    }
 }
 
 pub async fn run_coordinator_server(
     addr: std::net::SocketAddr,
     expected_workers: usize,
     verbose: bool,
+    http_port: Option<u16>,
+    worker_timeout_secs: u64,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let (svc, _) = CoordinatorService::new(expected_workers, verbose);
+    let (svc, _, _) = CoordinatorService::new(expected_workers, verbose, worker_timeout_secs);
     let svc = Arc::new(svc);
+
+    // Background task: detect workers that haven't reported within timeout, abort job
+    let svc_timeout = Arc::clone(&svc);
+    let timeout_secs = worker_timeout_secs;
+    tokio::spawn(async move {
+        let check_interval = Duration::from_secs(5);
+        let timeout_duration = Duration::from_secs(timeout_secs);
+        loop {
+            tokio::time::sleep(check_interval).await;
+            let barrier = svc_timeout.barrier_reported.read().await;
+            // Find supersteps we're waiting on (incomplete barriers)
+            let pending: Vec<(u64, HashSet<WorkerId>)> = barrier
+                .iter()
+                .filter(|(_, reported)| reported.len() < svc_timeout.expected_workers)
+                .map(|(step, reported)| (*step, reported.keys().copied().collect()))
+                .collect();
+            drop(barrier);
+
+            for (superstep, reported) in pending {
+                let expected: HashSet<WorkerId> = (0..svc_timeout.expected_workers as WorkerId).collect();
+                let missing: Vec<WorkerId> = expected.difference(&reported).copied().collect();
+                if missing.is_empty() {
+                    continue;
+                }
+
+                let last_seen = svc_timeout.worker_last_seen.read().await;
+                let timed_out: Vec<WorkerId> = missing
+                    .into_iter()
+                    .filter(|&wid| {
+                        last_seen
+                            .get(&wid)
+                            .map(|t| t.elapsed() > timeout_duration)
+                            .unwrap_or(true) // never seen = consider timed out
+                    })
+                    .collect();
+                drop(last_seen);
+
+                if !timed_out.is_empty() {
+                    eprintln!(
+                        "  [coordinator] worker(s) {:?} timed out (no report for step {} in {}s) → aborting job",
+                        timed_out, superstep, timeout_secs
+                    );
+                    let _ = svc_timeout.advance_tx.send(u64::MAX);
+                    *svc_timeout.current_superstep.write().await = Superstep::new(u64::MAX);
+                    svc_timeout.barrier_reported.write().await.remove(&superstep);
+                    break;
+                }
+            }
+        }
+    });
+
+    if let Some(port) = http_port {
+        let http_addr: std::net::SocketAddr = format!("0.0.0.0:{}", port).parse()?;
+        let svc_http = Arc::clone(&svc);
+        tokio::spawn(async move {
+            use axum::{extract::State, routing::post, Json, Router};
+            #[derive(serde::Deserialize)]
+            struct JobRequest {
+                algo: String,
+                #[serde(default)]
+                program: String,
+            }
+            async fn submit_job_handler(
+                State(s): State<Arc<CoordinatorService>>,
+                Json(body): Json<JobRequest>,
+            ) -> Json<serde_json::Value> {
+                let params = s.submit_job(body.algo, body.program).await;
+                Json(serde_json::json!({
+                    "job_id": params.job_id,
+                    "algo": params.algo,
+                }))
+            }
+            let app = Router::new()
+                .route("/jobs", post(submit_job_handler))
+                .with_state(svc_http);
+            let listener = match tokio::net::TcpListener::bind(http_addr).await {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("coordinator HTTP bind failed: {}", e);
+                    return;
+                }
+            };
+            eprintln!("Coordinator HTTP API on http://{}/jobs (POST)", http_addr);
+            if let Err(e) = axum::serve(listener, app).await {
+                eprintln!("coordinator HTTP server error: {}", e);
+            }
+        });
+    }
 
     tonic::transport::Server::builder()
         .add_service(CoordinatorServer::new(ArcCoordinator(svc)))

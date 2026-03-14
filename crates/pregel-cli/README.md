@@ -4,6 +4,8 @@
 
 **Usage:** Run `cargo run -p pregel-cli -- <command>` or install and run `pregel <command>`.
 
+**Note:** Run from the `pregel/` directory (workspace root) so Cargo finds `Cargo.toml`.
+
 ## Commands
 
 | Command | Purpose |

@@ -18,6 +18,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     };
     let verbose = args.iter().any(|a| a == "--verbose" || a == "-v");
 
-    println!("Coordinator listening on {} (expecting {} workers)", addr, worker_count);
-    grpc::run_coordinator_server(addr, worker_count, verbose).await
+    let mut http_port = None;
+    let mut worker_timeout_secs = 60u64;
+    let mut i = 3;
+    while i < args.len() {
+        if args[i] == "--http-port" && i + 1 < args.len() {
+            http_port = Some(args[i + 1].parse()?);
+            i += 2;
+        } else if args[i] == "--worker-timeout" && i + 1 < args.len() {
+            worker_timeout_secs = args[i + 1].parse()?;
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+
+    println!("Coordinator listening on {} (expecting {} workers, worker timeout {}s)", addr, worker_count, worker_timeout_secs);
+    grpc::run_coordinator_server(addr, worker_count, verbose, http_port, worker_timeout_secs).await
 }

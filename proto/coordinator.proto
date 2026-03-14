@@ -8,6 +8,17 @@ service Coordinator {
   rpc ReportSuperstepDone(ReportSuperstepDoneRequest) returns (ReportSuperstepDoneResponse);
   rpc GetCurrentSuperstep(GetCurrentSuperstepRequest) returns (GetCurrentSuperstepResponse);
   rpc WaitForAdvance(WaitForAdvanceRequest) returns (stream AdvanceNotification);
+  // Session mode: worker blocks until coordinator starts a new job.
+  rpc WaitForJobStart(WaitForJobStartRequest) returns (stream JobStartNotification);
+}
+
+message WaitForJobStartRequest {}
+
+message JobStartNotification {
+  uint32 job_id = 1;
+  string algo = 2;
+  string program = 3;  // WASM path, empty = native
+  uint64 total_vertices = 4;  // For PageRank 1/N init
 }
 
 message RegisterWorkerRequest {

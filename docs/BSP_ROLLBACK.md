@@ -18,7 +18,8 @@ When a worker crashes, we need to recover to a consistent state. Standard approa
 
 - [x] CheckpointManager saves/loads partition state
 - [x] Recovery restores GraphPartition from checkpoint
-- [ ] Coordinator failure detection (heartbeat/timeout)
+- [x] Coordinator failure detection: tracks `worker_last_seen`, background task detects report timeout; on timeout aborts job (advance to u64::MAX)
+- [x] Worker: gRPC calls use 60s timeout; coordinator unreachable → worker exits with error
 - [ ] Pause/resume signaling to workers
 - [ ] Replacement worker spawn (K8s does this; local needs manual)
 - [ ] Rewind coordination (broadcast "rollback to superstep K")

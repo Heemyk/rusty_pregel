@@ -13,4 +13,6 @@ pregel-coordinator = { path = "../pregel-coordinator" }
 pregel-worker = { path = "../pregel-worker" }
 clap = { version = "4", features = ["derive"] }
 ctrlc = "3"
-tokio = { version = "1", features = ["process"] }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "rt", "sync"] }

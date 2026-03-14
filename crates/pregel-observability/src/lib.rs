@@ -1,9 +1,9 @@
-//! Observability hooks for testing and future Prometheus integration.
+//! Observability hooks for testing and Prometheus integration.
 //!
 //! ## Design
 //!
 //! Events are no-op by default. Swap in `TestObserver` for tests; `PrometheusObserver`
-//! (to be added) will record metrics for production.
+//! records metrics for production.
 //!
 //! ## Usage
 //!
@@ -13,15 +13,15 @@
 //! - VerticesComputed
 //! - CheckpointSaved
 //!
-//! ## Prometheus (future)
+//! ## Prometheus
 //!
-//! A `PrometheusObserver` will map events to:
-//! - `pregel_superstep_duration_seconds` (histogram, labels: worker_id, superstep)
+//! `PrometheusObserver` maps events to:
+//! - `pregel_superstep_duration_seconds` (histogram, labels: worker_id)
 //! - `pregel_messages_sent_total` (counter, labels: worker_id)
 //! - `pregel_vertices_computed_total` (counter, labels: worker_id)
 //! - `pregel_checkpoints_saved_total` (counter, labels: worker_id)
 //!
-//! Set via `set_observer_for_test(Observer::prometheus(...))` at startup.
+//! Use `init_prometheus_observer(addr)` and `spawn_metrics_server(addr, registry)` at startup.
 
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -259,9 +259,190 @@ impl Observer {
     pub fn verbose_level(level: u8) -> Self {
         Self(Arc::new(PrintObserver::new(level)))
     }
+    /// Prometheus observer for metrics. Use with `init_prometheus_observer` and `spawn_metrics_server`.
+    pub fn prometheus(backend: PrometheusObserver) -> Self {
+        Self(Arc::new(backend))
+    }
+    /// Chain multiple observers; events are forwarded to all.
+    pub fn composite(backends: Vec<Arc<dyn ObserverBackend>>) -> Self {
+        Self(Arc::new(CompositeObserver { backends }))
+    }
     pub fn record(&self, event: ObservableEvent) {
         self.0.record(event);
     }
+}
+
+/// Composite backend that forwards events to multiple observers.
+struct CompositeObserver {
+    backends: Vec<Arc<dyn ObserverBackend>>,
+}
+
+impl ObserverBackend for CompositeObserver {
+    fn record(&self, event: ObservableEvent) {
+        for b in &self.backends {
+            b.record(event.clone());
+        }
+    }
+}
+
+/// Prometheus-backed observer. Records events to Prometheus metrics.
+#[derive(Clone)]
+pub struct PrometheusObserver {
+    superstep_duration: prometheus::HistogramVec,
+    messages_sent: prometheus::IntCounterVec,
+    vertices_computed: prometheus::IntCounterVec,
+    checkpoints_saved: prometheus::IntCounterVec,
+}
+
+impl PrometheusObserver {
+    /// Create a new Prometheus observer and register metrics.
+    /// Returns `(observer, registry)` — use the registry with `spawn_metrics_server`.
+    pub fn new() -> Result<(Self, Arc<prometheus::Registry>), prometheus::Error> {
+        let registry = Arc::new(prometheus::Registry::new());
+
+        let superstep_duration = prometheus::HistogramVec::new(
+            prometheus::HistogramOpts::new(
+                "pregel_superstep_duration_seconds",
+                "Duration of superstep execution in seconds",
+            )
+            .buckets(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]),
+            &["worker_id"],
+        )?;
+        registry.register(Box::new(superstep_duration.clone()))?;
+
+        let messages_sent = prometheus::IntCounterVec::new(
+            prometheus::Opts::new(
+                "pregel_messages_sent_total",
+                "Total messages sent by worker",
+            ),
+            &["worker_id"],
+        )?;
+        registry.register(Box::new(messages_sent.clone()))?;
+
+        let vertices_computed = prometheus::IntCounterVec::new(
+            prometheus::Opts::new(
+                "pregel_vertices_computed_total",
+                "Total vertices computed by worker",
+            ),
+            &["worker_id"],
+        )?;
+        registry.register(Box::new(vertices_computed.clone()))?;
+
+        let checkpoints_saved = prometheus::IntCounterVec::new(
+            prometheus::Opts::new(
+                "pregel_checkpoints_saved_total",
+                "Total checkpoints saved by worker",
+            ),
+            &["worker_id"],
+        )?;
+        registry.register(Box::new(checkpoints_saved.clone()))?;
+
+        let observer = Self {
+            superstep_duration,
+            messages_sent,
+            vertices_computed,
+            checkpoints_saved,
+        };
+        Ok((observer, registry))
+    }
+}
+
+impl ObserverBackend for PrometheusObserver {
+    fn record(&self, event: ObservableEvent) {
+        let worker_id = match &event {
+            ObservableEvent::SuperstepStarted { worker_id, .. }
+            | ObservableEvent::SuperstepCompleted { worker_id, .. }
+            | ObservableEvent::MessagesSent { worker_id, .. }
+            | ObservableEvent::VerticesComputed { worker_id, .. }
+            | ObservableEvent::CheckpointSaved { worker_id, .. } => worker_id.to_string(),
+            _ => return,
+        };
+        let labels = [worker_id.as_str()];
+
+        match event {
+            ObservableEvent::SuperstepCompleted { duration_ms, .. } => {
+                let secs = duration_ms as f64 / 1000.0;
+                self.superstep_duration.with_label_values(&labels).observe(secs);
+            }
+            ObservableEvent::MessagesSent { count, .. } => {
+                self.messages_sent.with_label_values(&labels).inc_by(count as u64);
+            }
+            ObservableEvent::VerticesComputed { count, .. } => {
+                self.vertices_computed.with_label_values(&labels).inc_by(count as u64);
+            }
+            ObservableEvent::CheckpointSaved { .. } => {
+                self.checkpoints_saved.with_label_values(&labels).inc();
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Spawn a background task that serves /metrics for Prometheus scraping.
+/// Binds to `addr` (e.g. "0.0.0.0:9090").
+pub fn spawn_metrics_server(addr: std::net::SocketAddr, registry: Arc<prometheus::Registry>) {
+    tokio::spawn(async move {
+        use axum::{routing::get, Router};
+        use prometheus::Encoder;
+
+        let app = Router::new().route(
+            "/metrics",
+            get({
+                let registry = Arc::clone(&registry);
+                move || {
+                    let registry = Arc::clone(&registry);
+                    async move {
+                        let encoder = prometheus::TextEncoder::new();
+                        let metric_families = registry.gather();
+                        let mut buf = Vec::new();
+                        if let Err(e) = encoder.encode(&metric_families, &mut buf) {
+                            eprintln!("pregel-observability: encode error: {}", e);
+                        }
+                        (
+                            [("Content-Type", "text/plain; version=0.0.4; charset=utf-8")],
+                            buf,
+                        )
+                    }
+                }
+            }),
+        );
+
+        let listener = match tokio::net::TcpListener::bind(addr).await {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("pregel-observability: failed to bind metrics server to {}: {}", addr, e);
+                return;
+            }
+        };
+        eprintln!("pregel-observability: metrics server listening on http://{}/metrics", addr);
+
+        if let Err(e) = axum::serve(listener, app).await {
+            eprintln!("pregel-observability: metrics server error: {}", e);
+        }
+    });
+}
+
+/// Initialize the global observer with Prometheus and optionally spawn the metrics server.
+/// If `metrics_addr` is Some, spawns the metrics HTTP server. If `verbose_level > 0`,
+/// chains with PrintObserver so you get both metrics and human output.
+pub fn init_prometheus_observer(
+    metrics_addr: Option<std::net::SocketAddr>,
+    verbose_level: u8,
+) -> Result<(), prometheus::Error> {
+    let (prometheus_obs, registry) = PrometheusObserver::new()?;
+    let mut backends: Vec<Arc<dyn ObserverBackend>> = vec![Arc::new(prometheus_obs)];
+    if verbose_level > 0 {
+        backends.push(Arc::new(PrintObserver::new(verbose_level)));
+    }
+    VERBOSE_LEVEL.set(verbose_level).ok().expect("verbose already set");
+    OBSERVER
+        .set(Observer::composite(backends))
+        .ok()
+        .expect("observer already set");
+    if let Some(addr) = metrics_addr {
+        spawn_metrics_server(addr, registry);
+    }
+    Ok(())
 }
 
 impl Default for Observer {

@@ -2,3 +2,8 @@
 name = "pregel-observability"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+prometheus = "0.13"
+axum = "0.7"
+tokio = { version = "1", features = ["net"] }
