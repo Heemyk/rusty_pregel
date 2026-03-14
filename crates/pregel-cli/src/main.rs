@@ -88,6 +88,10 @@ enum Commands {
         /// Path to WASM module (optional; native algo if omitted)
         #[arg(short, long, alias = "wasm", value_name = "PATH")]
         program: Option<String>,
+
+        /// Wait for job completion and return result (blocking). Without this, returns job_id immediately (fire-and-forget).
+        #[arg(long, default_value_t = false)]
+        await_result: bool,
     },
 
     /// Single-shot: spawn coordinator+workers, run one job, exit
@@ -131,6 +135,10 @@ enum Commands {
         /// Worker report timeout (coordinator)
         #[arg(long, default_value = "60", value_name = "SECS")]
         worker_timeout: u64,
+
+        /// Wait for job completion and print result (default: true for submit). Use --no-await-result for fire-and-forget style.
+        #[arg(long, default_value = "true", default_missing_value = "true")]
+        await_result: bool,
 
         #[arg(short = 'v', long, value_name = "0|1|2", num_args = 0..=1, default_value = "0", default_missing_value = "1", help = VERBOSE_HELP)]
         verbose: u8,
@@ -196,7 +204,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             worker_timeout,
             verbose.min(2),
         ),
-        Commands::Job { session, algo, program } => run_job(&session, &algo, program.as_deref()),
+        Commands::Job {
+            session,
+            algo,
+            program,
+            await_result,
+        } => run_job(&session, &algo, program.as_deref(), await_result),
         Commands::Submit {
             program,
             graph,
@@ -208,6 +221,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             checkpoint_dir,
             metrics_port,
             worker_timeout,
+            await_result,
             verbose,
         } => run_submit(
             &graph,
@@ -220,6 +234,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             checkpoint_dir.as_deref(),
             metrics_port,
             worker_timeout,
+            await_result,
             verbose.min(2),
         ),
         Commands::Build { path } => run_build(&path),
@@ -364,6 +379,7 @@ fn run_job(
     session_url: &str,
     algo: &str,
     program: Option<&str>,
+    await_result: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let url = format!("{}/jobs", session_url.trim_end_matches('/'));
     let program_str = program.unwrap_or("");
@@ -372,7 +388,11 @@ fn run_job(
         .build()?;
     let res = client
         .post(&url)
-        .json(&serde_json::json!({ "algo": algo, "program": program_str }))
+        .json(&serde_json::json!({
+            "algo": algo,
+            "program": program_str,
+            "await": await_result,
+        }))
         .send()?;
     if !res.status().is_success() {
         return Err(format!("Job submit failed: {} {}", res.status(), res.text()?).into());
@@ -397,6 +417,7 @@ fn run_submit(
     checkpoint_dir: Option<&str>,
     metrics_port: Option<u16>,
     worker_timeout: u64,
+    await_result: bool,
     verbose: u8,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let graph_path = PathBuf::from(graph);
@@ -445,7 +466,8 @@ fn run_submit(
         .stderr(Stdio::inherit())
         .spawn()?;
 
-    std::thread::sleep(std::time::Duration::from_millis(800));
+    // Wait for workers to connect and register before POSTing job
+    std::thread::sleep(std::time::Duration::from_millis(1500));
 
     let session_url = format!("http://{}:5100", host);
     let mut worker_handles: Vec<(usize, Child)> = Vec::new();
@@ -515,9 +537,14 @@ fn run_submit(
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(3600))
         .build()?;
+    // Submit always awaits (single-shot: we need job to complete before killing processes)
     let res = client
         .post(&url)
-        .json(&serde_json::json!({ "algo": algo, "program": program_str }))
+        .json(&serde_json::json!({
+            "algo": algo,
+            "program": program_str,
+            "await": true,
+        }))
         .send()?;
     if !res.status().is_success() {
         let status = res.status();
@@ -529,10 +556,15 @@ fn run_submit(
         return Err(format!("Job failed: {} {}", status, text).into());
     }
     let body: serde_json::Value = res.json()?;
-    if let Some(result) = body.get("result") {
-        println!("Result: {}", serde_json::to_string_pretty(result).unwrap_or_else(|_| result.to_string()));
+    if await_result {
+        if let Some(result) = body.get("result") {
+            println!("Result: {}", serde_json::to_string_pretty(result).unwrap_or_else(|_| result.to_string()));
+        } else {
+            println!("{}", serde_json::to_string_pretty(&body).unwrap_or_else(|_| body.to_string()));
+        }
     } else {
-        println!("{}", serde_json::to_string_pretty(&body).unwrap_or_else(|_| body.to_string()));
+        let job_id = body.get("job_id").and_then(|v| v.as_u64()).unwrap_or(0);
+        println!("Job completed (job_id={})", job_id);
     }
 
     for (_, mut child) in worker_handles {

@@ -2,6 +2,16 @@
 
 Types and `runCompute()` for **local testing** of vertex algorithms in TypeScript.
 
+## Build
+
+```bash
+cd sdk/typescript
+npm install
+npm run build
+```
+
+Output: `dist/index.js`. Use with Node or bundle for browser.
+
 ## WASM: Use AssemblyScript
 
 TypeScript compiles to JavaScript, not WASM. For production WASM, use the **AssemblyScript SDK** (`sdk/assemblyscript/`), which compiles TypeScript-like code to WASM. See `sdk/assemblyscript/README.md`.

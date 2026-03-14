@@ -119,7 +119,12 @@ impl CoordinatorService {
         (svc, advance_rx, job_start_tx)
     }
 
-    pub async fn submit_job(&self, algo: String, program: String) -> (JobParams, oneshot::Receiver<serde_json::Value>) {
+    pub async fn submit_job(
+        &self,
+        algo: String,
+        program: String,
+        await_result: bool,
+    ) -> (JobParams, Option<oneshot::Receiver<serde_json::Value>>) {
         let total_vertices: u64 = self.workers.read().await.values().map(|(_, c)| c).sum();
         let job_id = {
             let mut id = self.next_job_id.write().await;
@@ -127,7 +132,12 @@ impl CoordinatorService {
             *id = id.saturating_add(1);
             j
         };
-        let (result_tx, result_rx) = oneshot::channel();
+        let (result_tx, result_rx) = if await_result {
+            let (tx, rx) = oneshot::channel();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
         let params = JobParams {
             job_id,
             algo: algo.clone(),
@@ -139,7 +149,7 @@ impl CoordinatorService {
             JobResultState {
                 algo: algo.clone(),
                 collected: HashMap::new(),
-                result_tx: Some(result_tx),
+                result_tx,
             },
         );
         let _ = self.job_start_tx.send(params.clone());
@@ -437,18 +447,33 @@ pub async fn run_coordinator_server(
                 algo: String,
                 #[serde(default)]
                 program: String,
+                /// When true, block until job completes and return result. When false, return job_id immediately (fire-and-forget).
+                #[serde(default = "default_wait")]
+                #[serde(rename = "await")]
+                wait: bool,
+            }
+            fn default_wait() -> bool {
+                true
             }
             async fn submit_job_handler(
                 State(s): State<Arc<CoordinatorService>>,
                 Json(body): Json<JobRequest>,
             ) -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
-                let (params, result_rx) = s.submit_job(body.algo, body.program).await;
-                let result = result_rx.await.map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
-                Ok(Json(serde_json::json!({
-                    "job_id": params.job_id,
-                    "algo": params.algo,
-                    "result": result,
-                })))
+                let (params, result_rx) = s.submit_job(body.algo, body.program, body.wait).await;
+                let response = if let Some(rx) = result_rx {
+                    let result = rx.await.map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                    serde_json::json!({
+                        "job_id": params.job_id,
+                        "algo": params.algo,
+                        "result": result,
+                    })
+                } else {
+                    serde_json::json!({
+                        "job_id": params.job_id,
+                        "algo": params.algo,
+                    })
+                };
+                Ok(Json(response))
             }
             let app = Router::new()
                 .route("/jobs", post(submit_job_handler))

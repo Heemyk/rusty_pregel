@@ -4,6 +4,12 @@ How to run automated tests, benchmarks, and manual end-to-end validation.
 
 **Prerequisite:** Run all commands from the `pregel/` directory (workspace root).
 
+**Troubleshooting:** If submit hangs or you see "Address already in use", kill old processes first:
+```bash
+pkill -f pregel-worker; pkill -f pregel-coordinator
+```
+See `docs/FAQ_AND_TROUBLESHOOTING.md` for more.
+
 ---
 
 ## Verbose Output
@@ -44,8 +50,12 @@ cargo test
 
 ### Unit Tests (in source)
 
-- **`pregel-worker/src/native_algo.rs`** – `#[test]` blocks for CC and PageRank compute
+- **`pregel-worker/src/native_algo.rs`** – `#[test]` blocks for CC and PageRank compute (real logic, no mocks)
 - **`pregel-worker/tests/algo_messages.rs`** – Message format and `execute_superstep_parallel` behavior
+
+### Ignored / doc tests
+
+- **`pregel-sdk` doc tests** – Examples in `///` docs use `ignore` because they need full runtime setup. The examples in `examples/` are the canonical tests.
 
 ### WASM Tests
 
@@ -68,9 +78,11 @@ cargo bench -p pregel-worker
 
 ### Individual Benchmarks
 
-- **`cc_superstep_0_small`** – CC superstep 0 (no messages)
-- **`cc_superstep_1_with_messages`** – CC with inbox
-- **`pagerank_superstep_1`** – PageRank superstep 1
+- **`cc_superstep_0_small`** – CC superstep 0 (no messages), ~18 µs
+- **`cc_superstep_1_with_messages`** – CC with inbox, ~16 µs
+- **`pagerank_superstep_1`** – PageRank superstep 1, ~400 ns (fewer vertices with messages)
+
+Results show median time per superstep. See `docs/FAQ_AND_TROUBLESHOOTING.md` for interpretation.
 
 ---
 

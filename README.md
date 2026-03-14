@@ -41,6 +41,8 @@ cargo run -p pregel-cli -- submit --graph examples/data/sample.graph --workers 2
 
 The coordinator runs on port 5000; workers on 5001, 5002, etc. Press Ctrl+C to stop.
 
+**If submit hangs or you see "Address already in use":** Run `pkill -f pregel` first. See `docs/FAQ_AND_TROUBLESHOOTING.md`.
+
 ## Documentation Guide (for Rust Beginners)
 
 1. **pregel-common** – Types, errors, config. Understand `Result`, `Message`, `VertexId`.

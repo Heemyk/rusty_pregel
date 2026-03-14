@@ -2,6 +2,13 @@
 
 Implement `VertexProgram` to write graph algorithms in Go.
 
+## Build / type check
+
+```bash
+cd sdk/go
+go build ./...
+```
+
 ## Usage
 
 ```go

@@ -13,14 +13,14 @@ echo ""
 echo "--- 2. AssemblyScript SDK (build) ---"
 cd sdk/assemblyscript
 npm run asbuild:release 2>&1
-if [ -f build/algo.release.wasm ]; then
+cd ../..
+if [ -f sdk/assemblyscript/build/algo.release.wasm ]; then
   echo "AssemblyScript: built build/algo.release.wasm"
-  echo "  E2E: cargo run -p pregel-cli -- submit --graph examples/data/sample.graph --algo cc --program sdk/assemblyscript/build/algo.release.wasm"
+  echo "  E2E: make e2e-cc-as  (or: cargo run -p pregel-cli -- submit --graph examples/data/sample.graph --algo cc --program sdk/assemblyscript/build/algo.release.wasm)"
 else
   echo "AssemblyScript: build failed"
   exit 1
 fi
-cd ../..
 echo ""
 
 echo "--- 3. TypeScript SDK (runCompute local test) ---"
